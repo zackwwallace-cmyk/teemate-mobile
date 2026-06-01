@@ -1,0 +1,197 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { BottomNav } from '@/components/BottomNav';
+import { Logo } from '@/components/Logo';
+import { createCustomGroupChat, getConnectionRequestThreads, getCustomGroupThreads, getGroupCandidates, getRegularChatThreads, getRoundChatThreads, leaveGroupChat, unmatchUser, type ConnectionRequestThread, type CustomGroupThread, type RegularChatThread, type RoundChatThread } from '@/lib/chats';
+import { getMyProfile, type Profile } from '@/lib/data';
+import { isTeeMatePlus } from '@/lib/premium';
+import { colors } from '@/lib/theme';
+import { useSession } from '@/lib/useSession';
+
+function formatTime(value?: string | null) { if (!value) return ''; return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function roundLabel(thread: RoundChatThread) { const round = thread.round; const date = round.tee_time ? new Date(round.tee_time).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : 'Round'; return `${round.course_text || 'Round chat'} • ${date}`; }
+function Avatar({ profile, size = 54 }: { profile?: Profile | null; size?: number }) { return <View style={[styles.avatar, { height: size, width: size, borderRadius: size / 2 }]}>{profile?.avatar_url ? <Image source={{ uri: profile.avatar_url }} style={{ height: size, width: size }} /> : <Text style={styles.avatarText}>{profile?.display_name?.charAt(0)?.toUpperCase() || 'G'}</Text>}</View>; }
+
+type RequestView = 'received' | 'sent' | null;
+
+export default function ChatsScreen() {
+  const { session, loading } = useSession();
+  const router = useRouter();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [regular, setRegular] = useState<RegularChatThread[]>([]);
+  const [rounds, setRounds] = useState<RoundChatThread[]>([]);
+  const [groups, setGroups] = useState<CustomGroupThread[]>([]);
+  const [receivedRequests, setReceivedRequests] = useState<ConnectionRequestThread[]>([]);
+  const [sentRequests, setSentRequests] = useState<ConnectionRequestThread[]>([]);
+  const [candidates, setCandidates] = useState<Profile[]>([]);
+  const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set());
+  const [regularOpen, setRegularOpen] = useState(true);
+  const [requestView, setRequestView] = useState<RequestView>(null);
+  const [roundsOpen, setRoundsOpen] = useState(true);
+  const [groupsOpen, setGroupsOpen] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [groupTitle, setGroupTitle] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const premium = isTeeMatePlus(profile as any);
+
+  const filteredRegular = useMemo(() => { const term = search.trim().toLowerCase(); if (!term) return regular; return regular.filter((thread) => [thread.otherProfile?.display_name, thread.otherProfile?.home_area, thread.otherProfile?.skill, thread.lastMessage?.body].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [regular, search]);
+  const filteredReceived = useMemo(() => { if (!premium) return []; const term = search.trim().toLowerCase(); if (!term) return receivedRequests; return receivedRequests.filter((thread) => [thread.otherProfile?.display_name, thread.otherProfile?.home_area, thread.otherProfile?.skill].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [receivedRequests, search, premium]);
+  const filteredSent = useMemo(() => { const term = search.trim().toLowerCase(); if (!term) return sentRequests; return sentRequests.filter((thread) => [thread.otherProfile?.display_name, thread.otherProfile?.home_area, thread.otherProfile?.skill].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [sentRequests, search]);
+  const filteredRounds = useMemo(() => { const term = search.trim().toLowerCase(); if (!term) return rounds; return rounds.filter((thread) => [thread.round.course_text, thread.round.town, thread.lastMessage?.body, ...thread.participantProfiles.map((profile) => profile.display_name)].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [rounds, search]);
+  const filteredGroups = useMemo(() => { const term = search.trim().toLowerCase(); if (!term) return groups; return groups.filter((thread) => [thread.title, thread.lastMessage?.body, ...thread.participantProfiles.map((profile) => profile.display_name)].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [groups, search]);
+  const filteredCandidates = useMemo(() => { const term = candidateSearch.trim().toLowerCase(); if (!term) return candidates; return candidates.filter((profile) => [profile.display_name, profile.home_area, profile.skill].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [candidates, candidateSearch]);
+  const visibleRequests = requestView === 'received' && premium ? filteredReceived : requestView === 'sent' ? filteredSent : [];
+
+  async function load() {
+    if (!session?.user.id) return;
+    setRefreshing(true);
+    const [profileResult, regularResult, roundResult, groupResult, requestResult, candidateResult] = await Promise.all([
+      getMyProfile(session.user.id),
+      getRegularChatThreads(session.user.id),
+      getRoundChatThreads(session.user.id),
+      getCustomGroupThreads(session.user.id),
+      getConnectionRequestThreads(session.user.id),
+      getGroupCandidates(session.user.id),
+    ]);
+    setRefreshing(false);
+    if (profileResult.error) Alert.alert('Profile error', profileResult.error.message);
+    if (regularResult.error) Alert.alert('Chats error', regularResult.error.message);
+    if (roundResult.error) Alert.alert('Round chats error', roundResult.error.message);
+    if (groupResult.error) console.log('Group chats setup notice:', groupResult.error.message);
+    if (requestResult.error) Alert.alert('Requests error', requestResult.error.message);
+    if (candidateResult.error) Alert.alert('Group users error', candidateResult.error.message);
+    setProfile(profileResult.data ?? null);
+    setRegular(regularResult.data ?? []);
+    setRounds(roundResult.data ?? []);
+    setGroups(groupResult.data ?? []);
+    setReceivedRequests(requestResult.data?.received ?? []);
+    setSentRequests(requestResult.data?.sent ?? []);
+    setCandidates(candidateResult.data ?? []);
+    setConnectedIds(candidateResult.connectedIds ?? new Set());
+  }
+
+  useFocusEffect(useCallback(() => { load(); }, [session?.user.id]));
+
+  if (loading) return <SafeAreaView style={styles.center}><ActivityIndicator color={colors.pine} /></SafeAreaView>;
+  if (!session) return <Redirect href="/" />;
+
+  function lockedRequests() {
+    Alert.alert('Unlock incoming requests', 'TeeMate+ members can see who requested to connect with them. Upgrade to unlock incoming requests, unlimited partner requests, boosts, and advanced filters.', [
+      { text: 'Maybe later', style: 'cancel' },
+      { text: 'Join TeeMate+', onPress: () => router.push('/upgrade' as any) },
+    ]);
+  }
+  function toggleReceivedRequests() {
+    if (!premium) return lockedRequests();
+    setRequestView(requestView === 'received' ? null : 'received');
+  }
+  function toggleSelected(id: string) { setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
+  function openProfile(thread: ConnectionRequestThread) { const id = thread.otherProfile?.id; if (id) router.push({ pathname: '/golfer/[id]', params: { id } }); }
+  function confirmUnmatch(thread: RegularChatThread) {
+    const name = thread.otherProfile?.display_name || 'this golfer';
+    Alert.alert('Unmatch?', `Remove your connection with ${name}? You can reconnect later from Discover.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Unmatch', style: 'destructive', onPress: async () => {
+        const { error } = await unmatchUser(thread.id);
+        if (error) return Alert.alert('Unmatch failed', error.message);
+        await load();
+      } },
+    ]);
+  }
+  function confirmDeleteRegular(thread: RegularChatThread) {
+    Alert.alert('Delete chat?', 'This removes the chat preview from your list. It does not unmatch the golfer.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete chat', style: 'destructive', onPress: () => setRegular((current) => current.filter((item) => item.id !== thread.id)) },
+    ]);
+  }
+  function confirmDeclineRequest(thread: ConnectionRequestThread) {
+    const name = thread.otherProfile?.display_name || 'this golfer';
+    const label = thread.direction === 'received' ? 'Decline request' : 'Cancel request';
+    Alert.alert(label, `${label} from ${name}?`, [
+      { text: 'Keep', style: 'cancel' },
+      { text: label, style: 'destructive', onPress: async () => {
+        const { error } = await unmatchUser(thread.id);
+        if (error) return Alert.alert('Failed', error.message);
+        await load();
+      } },
+    ]);
+  }
+  function confirmLeaveGroup(thread: CustomGroupThread) {
+    Alert.alert('Leave chat?', `Leave "${thread.title}"? You will stop receiving its messages.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Leave chat', style: 'destructive', onPress: async () => {
+        if (!session?.user.id) return;
+        const { error } = await leaveGroupChat(thread.id, session.user.id);
+        if (error) return Alert.alert('Leave failed', error.message);
+        await load();
+      } },
+    ]);
+  }
+  async function createGroup() {
+    if (!selectedIds.length) return Alert.alert('Select golfers', 'Choose at least one golfer for the group.');
+    const unconnectedIds = selectedIds.filter((id) => !connectedIds.has(id));
+    const unconnectedNames = unconnectedIds
+      .map((id) => candidates.find((profile) => profile.id === id)?.display_name)
+      .filter(Boolean) as string[];
+    const run = async (requestIds: string[]) => {
+      setCreating(true);
+      const { data, error } = await createCustomGroupChat(session.user.id, groupTitle, selectedIds, requestIds);
+      setCreating(false);
+      if (error) return Alert.alert('Create group', error.message);
+      const groupId = data?.group?.id;
+      setCreateOpen(false); setSelectedIds([]); setGroupTitle(''); setCandidateSearch('');
+      if (groupId) router.push({ pathname: '/group-chat/[id]', params: { id: groupId } });
+      load();
+    };
+    if (unconnectedIds.length > 0) {
+      const namesText = unconnectedNames.length ? unconnectedNames.join(', ') : `${unconnectedIds.length} golfer${unconnectedIds.length === 1 ? '' : 's'}`;
+      return Alert.alert('Request connections?', `Do you want to connect with ${namesText}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Create only', onPress: () => run([]) },
+        { text: 'Create + request', onPress: () => run(unconnectedIds) },
+      ]);
+    }
+    run([]);
+  }
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}>
+        <View style={styles.topbar}><Logo /><TouchableOpacity onPress={() => setCreateOpen(true)} style={styles.newGroup}><Ionicons name="add" size={18} color={colors.cream} /><Text style={styles.newGroupText}>Group</Text></TouchableOpacity></View>
+        <Text style={styles.title}>Messages</Text>
+        <Text style={styles.subtitle}>Connections, requests, and chats in one place.</Text>
+        <View style={styles.searchBox}><Ionicons name="search-outline" size={18} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Search users or chats..." placeholderTextColor={colors.muted} style={styles.searchInput} autoCapitalize="none" />{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.muted} /></TouchableOpacity> : null}</View>
+        <Text style={styles.matchesTitle}>Connections</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.matchStrip}>{regular.length ? regular.map((thread) => <TouchableOpacity key={thread.id} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: thread.id } })} onLongPress={() => confirmUnmatch(thread)} style={styles.matchBubble}><Avatar profile={thread.otherProfile} size={64} /><Text numberOfLines={1} style={styles.matchName}>{thread.otherProfile?.display_name || 'Golfer'}</Text></TouchableOpacity>) : <Text style={styles.emptyStrip}>No connections yet</Text>}</ScrollView>
+        <View style={styles.requestButtons}><TouchableOpacity onPress={toggleReceivedRequests} style={[styles.requestButton, requestView === 'received' && premium && styles.requestButtonActive]}><Ionicons name={premium ? 'heart-circle-outline' : 'lock-closed-outline'} size={18} color={requestView === 'received' && premium ? colors.cream : colors.pine} /><Text style={[styles.requestButtonText, requestView === 'received' && premium && styles.requestButtonTextActive]}>Requests</Text><Text style={[styles.requestCount, requestView === 'received' && premium && styles.requestCountActive]}>{premium ? filteredReceived.length : 'Plus'}</Text></TouchableOpacity><TouchableOpacity onPress={() => setRequestView(requestView === 'sent' ? null : 'sent')} style={[styles.requestButton, requestView === 'sent' && styles.requestButtonActive]}><Ionicons name="paper-plane-outline" size={18} color={requestView === 'sent' ? colors.cream : colors.pine} /><Text style={[styles.requestButtonText, requestView === 'sent' && styles.requestButtonTextActive]}>Sent</Text><Text style={[styles.requestCount, requestView === 'sent' && styles.requestCountActive]}>{filteredSent.length}</Text></TouchableOpacity></View>
+        {requestView ? <View style={styles.requestStripCard}><View style={styles.requestStripHeader}><Text style={styles.matchesTitle}>{requestView === 'received' ? 'Requests received' : 'Requests sent'}</Text><Text style={styles.requestHint}>Tap to view • long-press to remove</Text></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.matchStrip}>{visibleRequests.length ? visibleRequests.map((thread) => <View key={thread.id} style={styles.matchBubble}><TouchableOpacity onPress={() => openProfile(thread)} onLongPress={() => confirmDeclineRequest(thread)}><Avatar profile={thread.otherProfile} size={64} /><Text numberOfLines={1} style={styles.matchName}>{thread.otherProfile?.display_name || 'Golfer'}</Text><Text numberOfLines={1} style={styles.requestStatus}>{requestView === 'received' ? 'Requested' : 'Pending'}</Text></TouchableOpacity><TouchableOpacity onPress={() => confirmDeclineRequest(thread)} style={styles.removeBadge}><Ionicons name="close" size={12} color={colors.cream} /></TouchableOpacity></View>) : <Text style={styles.emptyStrip}>{requestView === 'received' ? 'No received requests.' : 'No sent requests.'}</Text>}</ScrollView></View> : null}
+        <SectionHeader title="Chats" count={filteredRegular.length} open={regularOpen} onPress={() => setRegularOpen(!regularOpen)} />
+        {regularOpen ? filteredRegular.length ? filteredRegular.map((thread) => <RegularThread key={thread.id} thread={thread} onProfile={(id: string) => router.push({ pathname: '/golfer/[id]', params: { id } })} onChat={() => router.push({ pathname: '/chat/[id]', params: { id: thread.id } })} onUnmatch={() => confirmUnmatch(thread)} onDelete={() => confirmDeleteRegular(thread)} />) : <EmptyText text={search ? 'No user chats match that search.' : 'No regular chats yet. Connected golfers will show here.'} /> : null}
+        <SectionHeader title="Group chats" count={filteredGroups.length} open={groupsOpen} onPress={() => setGroupsOpen(!groupsOpen)} />
+        {groupsOpen ? filteredGroups.length ? filteredGroups.map((thread) => <GroupThread key={thread.id} thread={thread} onPress={() => router.push({ pathname: '/group-chat/[id]', params: { id: thread.id } })} onLeave={() => confirmLeaveGroup(thread)} />) : <EmptyText text="No custom group chats yet. Run the group-chat SQL in Supabase if this section stays empty after creating one." /> : null}
+        <SectionHeader title="Round group chats" count={filteredRounds.length} open={roundsOpen} onPress={() => setRoundsOpen(!roundsOpen)} />
+        {roundsOpen ? filteredRounds.length ? filteredRounds.map((thread) => <RoundThread key={thread.id} thread={thread} onPress={() => router.push({ pathname: '/round-chat/[id]', params: { id: thread.id } })} />) : <EmptyText text={search ? 'No round chats match that search.' : 'No round group chats yet. Hosted or confirmed rounds will show here.'} /> : null}
+      </ScrollView>
+      <CreateGroupModal visible={createOpen} onClose={() => setCreateOpen(false)} title={groupTitle} setTitle={setGroupTitle} search={candidateSearch} setSearch={setCandidateSearch} candidates={filteredCandidates} selectedIds={selectedIds} connectedIds={connectedIds} onToggle={toggleSelected} creating={creating} onCreate={createGroup} />
+      <BottomNav />
+    </SafeAreaView>
+  );
+}
+
+function SwipeActions({ actions }: { actions: { label: string; icon: any; kind: 'warn' | 'danger'; onPress: () => void }[] }) { return <View style={styles.swipeActions}>{actions.map((action) => <TouchableOpacity key={action.label} onPress={action.onPress} style={[styles.swipeAction, action.kind === 'danger' ? styles.swipeDanger : styles.swipeWarn]}><Ionicons name={action.icon} size={18} color={colors.cream} /><Text style={styles.swipeActionText}>{action.label}</Text></TouchableOpacity>)}</View>; }
+function RegularThread({ thread, onProfile, onChat, onUnmatch, onDelete }: any) { const otherId = thread.otherProfile?.id; return <Swipeable overshootRight={false} renderRightActions={() => <SwipeActions actions={[{ label: 'Unmatch', icon: 'person-remove-outline', kind: 'warn', onPress: onUnmatch }, { label: 'Delete chat', icon: 'trash-outline', kind: 'danger', onPress: onDelete }]} />}><View style={styles.threadCard}><TouchableOpacity onPress={() => otherId && onProfile(otherId)} style={styles.profileTap}><Avatar profile={thread.otherProfile} size={50} /><View style={styles.threadBody}><Text style={styles.threadTitle}>{thread.otherProfile?.display_name || 'TeeMate golfer'}</Text><Text style={styles.threadPreview} numberOfLines={1}>{thread.lastMessage?.body || 'No messages yet'}</Text></View></TouchableOpacity><TouchableOpacity onPress={onChat} style={styles.openChatButton}><Text style={styles.threadTime}>{formatTime(thread.updatedAt)}</Text><Ionicons name="chevron-forward" size={20} color={colors.pine} /></TouchableOpacity></View></Swipeable>; }
+function GroupThread({ thread, onPress, onLeave }: { thread: CustomGroupThread; onPress: () => void; onLeave: () => void }) { return <Swipeable overshootRight={false} renderRightActions={() => <SwipeActions actions={[{ label: 'Leave chat', icon: 'exit-outline', kind: 'danger', onPress: onLeave }]} />}><View style={styles.threadCard}><TouchableOpacity onPress={onPress} style={styles.profileTap}><AvatarStack profiles={thread.participantProfiles} /><View style={styles.threadBody}><Text style={styles.threadTitle}>{thread.title}</Text><Text style={styles.threadPreview} numberOfLines={1}>{thread.participantProfiles.map((profile) => profile.display_name).join(', ')}</Text><Text style={styles.threadPreview} numberOfLines={1}>{thread.lastMessage?.body || 'No messages yet'}</Text></View></TouchableOpacity><View style={styles.threadMeta}><Text style={styles.threadTime}>{formatTime(thread.updatedAt)}</Text><Ionicons name="chevron-forward" size={18} color={colors.muted} /></View></View></Swipeable>; }
+function RoundThread({ thread, onPress }: { thread: RoundChatThread; onPress: () => void }) { return <TouchableOpacity onPress={onPress} style={styles.threadCard}><AvatarStack profiles={thread.participantProfiles} /><View style={styles.threadBody}><Text style={styles.threadTitle}>{roundLabel(thread)}</Text><Text style={styles.threadPreview} numberOfLines={1}>{thread.participantProfiles.map((profile) => profile.display_name).filter(Boolean).join(', ') || 'Round group'}</Text><Text style={styles.threadPreview} numberOfLines={1}>{thread.lastMessage?.body || 'No messages yet'}</Text></View><View style={styles.threadMeta}><Text style={styles.threadTime}>{formatTime(thread.updatedAt)}</Text><Ionicons name="chevron-forward" size={18} color={colors.muted} /></View></TouchableOpacity>; }
+function AvatarStack({ profiles }: { profiles: Profile[] }) { return <View style={styles.roundStack}>{profiles.slice(0, 3).map((profile, index) => <View key={profile.id} style={[styles.roundAvatarPhoto, { marginLeft: index === 0 ? 0 : -14 }]}>{profile.avatar_url ? <Image source={{ uri: profile.avatar_url }} style={styles.roundAvatarImage} /> : <Text style={styles.roundAvatarText}>{profile.display_name?.charAt(0)?.toUpperCase() || 'T'}</Text>}</View>)}{profiles.length === 0 ? <View style={styles.roundAvatar}><Ionicons name="people-outline" size={22} color={colors.pine} /></View> : null}</View>; }
+function SectionHeader({ title, count, open, onPress }: { title: string; count: number; open: boolean; onPress: () => void }) { return <TouchableOpacity onPress={onPress} style={styles.sectionHeader}><View><Text style={styles.sectionTitle}>{title}</Text><Text style={styles.sectionCount}>{count} {count === 1 ? 'item' : 'items'}</Text></View><Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={22} color={colors.pine} /></TouchableOpacity>; }
+function EmptyText({ text }: { text: string }) { return <Text style={styles.emptyText}>{text}</Text>; }
+function CreateGroupModal({ visible, onClose, title, setTitle, search, setSearch, candidates, selectedIds, connectedIds, onToggle, creating, onCreate }: any) { return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}><SafeAreaView style={styles.modal}><ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled"><View style={styles.modalHeader}><TouchableOpacity onPress={onClose} style={styles.closeButton}><Ionicons name="close" size={22} color={colors.pine} /></TouchableOpacity><View><Text style={styles.modalTitle}>Create group chat</Text><Text style={styles.modalSub}>Add golfers to start a group chat.</Text></View></View><TextInput value={title} onChangeText={setTitle} placeholder="Group name" placeholderTextColor={colors.muted} style={styles.input} /><TextInput value={search} onChangeText={setSearch} placeholder="Search connected users and golfers..." placeholderTextColor={colors.muted} style={styles.input} /><View style={styles.candidateList}>{candidates.map((profile: Profile) => { const selected = selectedIds.includes(profile.id); const connected = connectedIds.has(profile.id); return <TouchableOpacity key={profile.id} onPress={() => onToggle(profile.id)} style={[styles.candidateRow, selected && styles.candidateSelected]}><Avatar profile={profile} size={42} /><View style={styles.threadBody}><Text style={styles.threadTitle}>{profile.display_name}</Text><Text style={styles.threadPreview}>{connected ? 'Connected' : 'Not connected'}</Text></View>{selected ? <Ionicons name="checkmark-circle" size={22} color={colors.pine} /> : null}</TouchableOpacity>; })}</View></ScrollView><View style={styles.modalFooter}><Text style={styles.modalFooterHint}>{selectedIds.length} selected</Text><TouchableOpacity disabled={creating} onPress={onCreate} style={styles.createButton}>{creating ? <ActivityIndicator color={colors.cream} /> : <Text style={styles.createText}>Create group</Text>}</TouchableOpacity></View></SafeAreaView></Modal>; }
+
+const styles = StyleSheet.create({ screen: { flex: 1, backgroundColor: colors.background }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }, content: { padding: 20, paddingBottom: 118 }, topbar: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14, paddingTop: 4 }, newGroup: { alignItems: 'center', backgroundColor: colors.pine, borderRadius: 999, flexDirection: 'row', gap: 5, paddingHorizontal: 12, paddingVertical: 9 }, newGroupText: { color: colors.cream, fontSize: 12, fontWeight: '900' }, title: { color: colors.pine, fontSize: 34, fontWeight: '900' }, subtitle: { color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 14, marginTop: 4 }, searchBox: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flexDirection: 'row', gap: 8, marginBottom: 12, minHeight: 50, paddingHorizontal: 14 }, searchInput: { color: colors.ink, flex: 1, fontSize: 15, fontWeight: '700' }, matchesTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginBottom: 8 }, matchStrip: { gap: 12, paddingBottom: 12 }, matchBubble: { alignItems: 'center', width: 76, position: 'relative' }, matchName: { color: colors.ink, fontSize: 11, fontWeight: '900', marginTop: 5, textAlign: 'center', width: 76 }, emptyStrip: { color: colors.muted, paddingVertical: 20 }, requestButtons: { flexDirection: 'row', gap: 10, marginBottom: 10 }, requestButton: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 999, borderWidth: 1, flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 46, paddingHorizontal: 12 }, requestButtonActive: { backgroundColor: colors.pine, borderColor: colors.pine }, requestButtonText: { color: colors.pine, fontSize: 13, fontWeight: '900' }, requestButtonTextActive: { color: colors.cream }, requestCount: { backgroundColor: 'rgba(21,64,44,0.1)', borderRadius: 999, color: colors.pine, fontSize: 11, fontWeight: '900', overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 3 }, requestCountActive: { backgroundColor: colors.lime, color: colors.ink }, requestStripCard: { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 20, borderWidth: 1, marginBottom: 12, padding: 14 }, requestStripHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }, requestHint: { color: colors.muted, fontSize: 11, fontWeight: '800' }, requestStatus: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 2, textAlign: 'center' }, removeBadge: { alignItems: 'center', backgroundColor: '#c0392b', borderRadius: 999, height: 20, justifyContent: 'center', position: 'absolute', right: 4, top: -2, width: 20 }, sectionHeader: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, marginTop: 8, padding: 14 }, sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' }, sectionCount: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 }, threadCard: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 12, marginBottom: 10, padding: 14 }, profileTap: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 12 }, swipeActions: { alignItems: 'stretch', flexDirection: 'row', marginBottom: 10, overflow: 'hidden', borderRadius: 20 }, swipeAction: { alignItems: 'center', justifyContent: 'center', minWidth: 92, paddingHorizontal: 10 }, swipeWarn: { backgroundColor: '#b86b15' }, swipeDanger: { backgroundColor: '#c0392b' }, swipeActionText: { color: colors.cream, fontSize: 11, fontWeight: '900', marginTop: 4 }, avatar: { alignItems: 'center', backgroundColor: colors.pine, justifyContent: 'center', overflow: 'hidden' }, avatarText: { color: colors.cream, fontSize: 18, fontWeight: '900' }, roundStack: { alignItems: 'center', flexDirection: 'row', minWidth: 58 }, roundAvatar: { alignItems: 'center', backgroundColor: colors.lime, borderRadius: 999, height: 48, justifyContent: 'center', width: 48 }, roundAvatarPhoto: { alignItems: 'center', backgroundColor: colors.pine, borderColor: colors.card, borderRadius: 999, borderWidth: 2, height: 42, justifyContent: 'center', overflow: 'hidden', width: 42 }, roundAvatarImage: { height: 42, width: 42 }, roundAvatarText: { color: colors.cream, fontSize: 14, fontWeight: '900' }, threadBody: { flex: 1 }, threadTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' }, threadPreview: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 2 }, threadMeta: { alignItems: 'flex-end', gap: 8 }, openChatButton: { alignItems: 'flex-end', gap: 8 }, threadTime: { color: colors.muted, fontSize: 10, fontWeight: '800', maxWidth: 92, textAlign: 'right' }, emptyText: { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderWidth: 1, color: colors.muted, fontSize: 14, lineHeight: 20, marginBottom: 12, padding: 16, textAlign: 'center' }, modal: { flex: 1, backgroundColor: colors.background }, modalContent: { gap: 12, padding: 20, paddingBottom: 120 }, modalHeader: { alignItems: 'center', flexDirection: 'row', gap: 12 }, closeButton: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 999, borderWidth: 1, height: 42, justifyContent: 'center', width: 42 }, modalTitle: { color: colors.pine, fontSize: 25, fontWeight: '900' }, modalSub: { color: colors.muted, fontSize: 12, marginTop: 2 }, input: { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 15, borderWidth: 1, color: colors.ink, fontSize: 15, padding: 13 }, candidateList: { gap: 8 }, candidateRow: { alignItems: 'center', backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderWidth: 1, flexDirection: 'row', gap: 10, padding: 10 }, candidateSelected: { borderColor: colors.pine, backgroundColor: 'rgba(215,255,69,0.22)' }, modalFooter: { backgroundColor: colors.background, borderTopColor: colors.border, borderTopWidth: 1, gap: 8, padding: 16 }, modalFooterHint: { color: colors.muted, fontSize: 12, fontWeight: '800', textAlign: 'center' }, createButton: { alignItems: 'center', backgroundColor: colors.pine, borderRadius: 16, justifyContent: 'center', minHeight: 52 }, createText: { color: colors.cream, fontSize: 16, fontWeight: '900' } });

@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "TeeMate",
+    "slug": "teemate",
+    "scheme": "teemate",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7F5EF",
+    "privacy": "public",
+    "icon": "./assets/icon.svg",
+    "splash": {
+      "image": "./assets/splash.svg",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F5EF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.teemates.mobile",
+      "buildNumber": "1",
+      "usesAppleSignIn": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "TeeMate uses your camera only when you choose to add or update a profile or post photo.",
+        "NSPhotoLibraryUsageDescription": "TeeMate uses your photo library only when you choose to upload a profile or post photo.",
+        "NSLocationWhenInUseUsageDescription": "TeeMate uses your approximate location to help match you with nearby golfers and filter partner suggestions."
+      }
+    },
+    "android": {
+      "package": "app.teemates.mobile",
+      "versionCode": 1,
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "ACCESS_FINE_LOCATION", "com.android.vending.BILLING"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.svg",
+        "backgroundColor": "#15402C"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store",
+      "expo-splash-screen"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

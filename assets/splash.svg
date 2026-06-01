@@ -1,0 +1,10 @@
+<svg width="2048" height="2048" viewBox="0 0 2048 2048" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="2048" height="2048" fill="#F7F5EF"/>
+  <circle cx="1024" cy="880" r="300" fill="#15402C"/>
+  <circle cx="1024" cy="880" r="250" fill="#D7F25B"/>
+  <path d="M1024 652C930 652 854 728 854 822C854 963 1024 1108 1024 1108C1024 1108 1194 963 1194 822C1194 728 1118 652 1024 652Z" fill="#15402C"/>
+  <circle cx="1024" cy="808" r="68" fill="#F7F5EF"/>
+  <rect x="1008" y="852" width="32" height="172" fill="#F7F5EF"/>
+  <path d="M940 1024H1108" stroke="#F7F5EF" stroke-width="34" stroke-linecap="round"/>
+  <text x="1024" y="1300" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="150" font-weight="900" fill="#15402C">TeeMate</text>
+</svg>
