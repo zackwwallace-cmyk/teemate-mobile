@@ -8,12 +8,6 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#F7F5EF",
     "privacy": "public",
-    "icon": "./assets/icon.svg",
-    "splash": {
-      "image": "./assets/splash.svg",
-      "resizeMode": "contain",
-      "backgroundColor": "#F7F5EF"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.teemates.mobile",
@@ -28,11 +22,12 @@
     "android": {
       "package": "app.teemates.mobile",
       "versionCode": 1,
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "ACCESS_FINE_LOCATION", "com.android.vending.BILLING"],
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.svg",
-        "backgroundColor": "#15402C"
-      }
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "ACCESS_FINE_LOCATION",
+        "com.android.vending.BILLING"
+      ]
     },
     "plugins": [
       "expo-router",
