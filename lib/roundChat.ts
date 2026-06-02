@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { sendPushNotification } from './notifications';
 import type { Message, Round } from './data';
 
 export async function getRoundById(roundId: string) {
@@ -14,12 +15,40 @@ export async function getRoundMessages(roundId: string) {
     .returns<Message[]>();
 }
 
+async function getRoundPushRecipientIds(roundId: string, senderId: string) {
+  const [{ data: round }, { data: players }] = await Promise.all([
+    getRoundById(roundId),
+    supabase.from('round_players').select('player_id').eq('round_id', roundId).eq('confirmed', true),
+  ]);
+  return [...new Set([round?.host_id, ...((players ?? []) as any[]).map((row) => row.player_id)].filter((id): id is string => Boolean(id) && id !== senderId))];
+}
+
 export async function sendRoundMessage(roundId: string, userId: string, body: string) {
-  return supabase
+  const result = await supabase
     .from('messages')
     .insert({ round_id: roundId, sender_id: userId, body })
     .select('*')
     .single();
+
+  if (!result.error) {
+    try {
+      const recipientIds = await getRoundPushRecipientIds(roundId, userId);
+      if (recipientIds.length) {
+        await sendPushNotification({
+          recipientIds,
+          actorId: userId,
+          title: 'New TeeMate round chat message',
+          body: body.length > 120 ? `${body.slice(0, 117)}...` : body,
+          type: 'round_update',
+          data: { roundId, route: `/round-chat/${roundId}` },
+        });
+      }
+    } catch (error: any) {
+      console.log('Round chat push error:', error?.message ?? error);
+    }
+  }
+
+  return result;
 }
 
 export async function canUserAccessRoundChat(roundId: string, userId: string) {
