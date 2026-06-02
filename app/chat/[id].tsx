@@ -3,6 +3,7 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getMessages, getMyMatches, getProfilesByIds, sendMessage, submitSupportTicket, type Match, type Message, type Profile } from '@/lib/data';
+import { sendPushNotification } from '@/lib/notifications';
 import { blockGolfer, reportGolfer } from '@/lib/safety';
 import { colors } from '@/lib/theme';
 import { useSession } from '@/lib/useSession';
@@ -43,11 +44,21 @@ export default function ChatScreen() {
 
   async function submit() {
     if (!session?.user.id || !match || !body.trim()) return;
+    const text = body.trim();
+    const recipientId = match.golfer_a === session.user.id ? match.golfer_b : match.golfer_a;
     setSending(true);
-    const { error } = await sendMessage(match.id, session.user.id, body.trim());
+    const { error } = await sendMessage(match.id, session.user.id, text);
     setSending(false);
     if (error) return Alert.alert('Send error', error.message);
     setBody('');
+    await sendPushNotification({
+      recipientIds: [recipientId],
+      actorId: session.user.id,
+      title: 'New TeeMate message',
+      body: text.length > 120 ? `${text.slice(0, 117)}...` : text,
+      type: 'message',
+      data: { matchId: match.id, route: `/chat/${match.id}` },
+    });
     await load();
   }
 
