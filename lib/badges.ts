@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getUnreadMessageTotal } from './unread';
 
 export type TabBadges = {
   rounds: number;
@@ -6,7 +7,7 @@ export type TabBadges = {
 };
 
 export async function getTabBadges(userId: string): Promise<TabBadges> {
-  const [{ count: connectionCount }, { data: hostedRounds }] = await Promise.all([
+  const [{ count: connectionCount }, { data: hostedRounds }, unreadMessages] = await Promise.all([
     supabase
       .from('matches')
       .select('id', { count: 'exact', head: true })
@@ -17,6 +18,7 @@ export async function getTabBadges(userId: string): Promise<TabBadges> {
       .from('rounds')
       .select('id')
       .eq('host_id', userId),
+    getUnreadMessageTotal(userId),
   ]);
 
   const roundIds = (hostedRounds ?? []).map((round: any) => round.id);
@@ -34,6 +36,6 @@ export async function getTabBadges(userId: string): Promise<TabBadges> {
 
   return {
     rounds,
-    connections: connectionCount ?? 0,
+    connections: (connectionCount ?? 0) + unreadMessages,
   };
 }
