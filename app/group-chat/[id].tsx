@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getGroupChat, sendGroupMessage } from '@/lib/chats';
 import { submitSupportTicket } from '@/lib/data';
+import { sendPushNotification } from '@/lib/notifications';
 import { colors } from '@/lib/theme';
 import { useSession } from '@/lib/useSession';
 import type { Message, Profile } from '@/lib/data';
@@ -38,11 +39,20 @@ export default function GroupChatScreen() {
 
   async function submit() {
     if (!session?.user.id || !id || !body.trim()) return;
+    const text = body.trim();
     setSending(true);
-    const { error } = await sendGroupMessage(id, session.user.id, body.trim());
+    const { error } = await sendGroupMessage(id, session.user.id, text);
     setSending(false);
     if (error) return Alert.alert('Send error', error.message);
     setBody('');
+    await sendPushNotification({
+      recipientIds: profiles.map((profile) => profile.id),
+      actorId: session.user.id,
+      title: group?.title ? `New message in ${group.title}` : 'New TeeMate group message',
+      body: text.length > 120 ? `${text.slice(0, 117)}...` : text,
+      type: 'group_message',
+      data: { groupId: id, route: `/group-chat/${id}` },
+    });
     await load();
   }
 
