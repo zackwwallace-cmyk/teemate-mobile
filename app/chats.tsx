@@ -48,6 +48,11 @@ export default function ChatsScreen() {
   const filteredGroups = useMemo(() => { const term = search.trim().toLowerCase(); if (!term) return groups; return groups.filter((thread) => [thread.title, thread.lastMessage?.body, ...thread.participantProfiles.map((profile) => profile.display_name)].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [groups, search]);
   const filteredCandidates = useMemo(() => { const term = candidateSearch.trim().toLowerCase(); if (!term) return candidates; return candidates.filter((profile) => [profile.display_name, profile.home_area, profile.skill].filter(Boolean).some((value) => String(value).toLowerCase().includes(term))); }, [candidates, candidateSearch]);
   const visibleRequests = requestView === 'received' && premium ? filteredReceived : requestView === 'sent' ? filteredSent : [];
+  const recentThreads = useMemo(() => ([
+    ...filteredRegular.map((thread) => ({ type: 'regular' as const, id: `regular-${thread.id}`, updatedAt: thread.updatedAt, thread })),
+    ...filteredGroups.map((thread) => ({ type: 'group' as const, id: `group-${thread.id}`, updatedAt: thread.updatedAt, thread })),
+    ...filteredRounds.map((thread) => ({ type: 'round' as const, id: `round-${thread.id}`, updatedAt: thread.updatedAt, thread })),
+  ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 12)), [filteredRegular, filteredGroups, filteredRounds]);
 
   async function load() {
     if (!session?.user.id) return;
@@ -88,76 +93,19 @@ export default function ChatsScreen() {
       { text: 'Join TeeMate+', onPress: () => router.push('/upgrade' as any) },
     ]);
   }
-  function toggleReceivedRequests() {
-    if (!premium) return lockedRequests();
-    setRequestView(requestView === 'received' ? null : 'received');
-  }
+  function toggleReceivedRequests() { if (!premium) return lockedRequests(); setRequestView(requestView === 'received' ? null : 'received'); }
   function toggleSelected(id: string) { setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
   function openProfile(thread: ConnectionRequestThread) { const id = thread.otherProfile?.id; if (id) router.push({ pathname: '/golfer/[id]', params: { id } }); }
-  function confirmUnmatch(thread: RegularChatThread) {
-    const name = thread.otherProfile?.display_name || 'this golfer';
-    Alert.alert('Unmatch?', `Remove your connection with ${name}? You can reconnect later from Discover.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Unmatch', style: 'destructive', onPress: async () => {
-        const { error } = await unmatchUser(thread.id);
-        if (error) return Alert.alert('Unmatch failed', error.message);
-        await load();
-      } },
-    ]);
-  }
-  function confirmDeleteRegular(thread: RegularChatThread) {
-    Alert.alert('Delete chat?', 'This removes the chat preview from your list. It does not unmatch the golfer.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete chat', style: 'destructive', onPress: () => setRegular((current) => current.filter((item) => item.id !== thread.id)) },
-    ]);
-  }
-  function confirmDeclineRequest(thread: ConnectionRequestThread) {
-    const name = thread.otherProfile?.display_name || 'this golfer';
-    const label = thread.direction === 'received' ? 'Decline request' : 'Cancel request';
-    Alert.alert(label, `${label} from ${name}?`, [
-      { text: 'Keep', style: 'cancel' },
-      { text: label, style: 'destructive', onPress: async () => {
-        const { error } = await unmatchUser(thread.id);
-        if (error) return Alert.alert('Failed', error.message);
-        await load();
-      } },
-    ]);
-  }
-  function confirmLeaveGroup(thread: CustomGroupThread) {
-    Alert.alert('Leave chat?', `Leave "${thread.title}"? You will stop receiving its messages.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Leave chat', style: 'destructive', onPress: async () => {
-        if (!session?.user.id) return;
-        const { error } = await leaveGroupChat(thread.id, session.user.id);
-        if (error) return Alert.alert('Leave failed', error.message);
-        await load();
-      } },
-    ]);
-  }
+  function confirmUnmatch(thread: RegularChatThread) { const name = thread.otherProfile?.display_name || 'this golfer'; Alert.alert('Unmatch?', `Remove your connection with ${name}? You can reconnect later from Discover.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Unmatch', style: 'destructive', onPress: async () => { const { error } = await unmatchUser(thread.id); if (error) return Alert.alert('Unmatch failed', error.message); await load(); } }]); }
+  function confirmDeleteRegular(thread: RegularChatThread) { Alert.alert('Delete chat?', 'This removes the chat preview from your list. It does not unmatch the golfer.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete chat', style: 'destructive', onPress: () => setRegular((current) => current.filter((item) => item.id !== thread.id)) }]); }
+  function confirmDeclineRequest(thread: ConnectionRequestThread) { const name = thread.otherProfile?.display_name || 'this golfer'; const label = thread.direction === 'received' ? 'Decline request' : 'Cancel request'; Alert.alert(label, `${label} from ${name}?`, [{ text: 'Keep', style: 'cancel' }, { text: label, style: 'destructive', onPress: async () => { const { error } = await unmatchUser(thread.id); if (error) return Alert.alert('Failed', error.message); await load(); } }]); }
+  function confirmLeaveGroup(thread: CustomGroupThread) { Alert.alert('Leave chat?', `Leave "${thread.title}"? You will stop receiving its messages.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Leave chat', style: 'destructive', onPress: async () => { if (!session?.user.id) return; const { error } = await leaveGroupChat(thread.id, session.user.id); if (error) return Alert.alert('Leave failed', error.message); await load(); } }]); }
   async function createGroup() {
     if (!selectedIds.length) return Alert.alert('Select golfers', 'Choose at least one golfer for the group.');
     const unconnectedIds = selectedIds.filter((id) => !connectedIds.has(id));
-    const unconnectedNames = unconnectedIds
-      .map((id) => candidates.find((profile) => profile.id === id)?.display_name)
-      .filter(Boolean) as string[];
-    const run = async (requestIds: string[]) => {
-      setCreating(true);
-      const { data, error } = await createCustomGroupChat(session.user.id, groupTitle, selectedIds, requestIds);
-      setCreating(false);
-      if (error) return Alert.alert('Create group', error.message);
-      const groupId = data?.group?.id;
-      setCreateOpen(false); setSelectedIds([]); setGroupTitle(''); setCandidateSearch('');
-      if (groupId) router.push({ pathname: '/group-chat/[id]', params: { id: groupId } });
-      load();
-    };
-    if (unconnectedIds.length > 0) {
-      const namesText = unconnectedNames.length ? unconnectedNames.join(', ') : `${unconnectedIds.length} golfer${unconnectedIds.length === 1 ? '' : 's'}`;
-      return Alert.alert('Request connections?', `Do you want to connect with ${namesText}?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Create only', onPress: () => run([]) },
-        { text: 'Create + request', onPress: () => run(unconnectedIds) },
-      ]);
-    }
+    const unconnectedNames = unconnectedIds.map((id) => candidates.find((profile) => profile.id === id)?.display_name).filter(Boolean) as string[];
+    const run = async (requestIds: string[]) => { setCreating(true); const { data, error } = await createCustomGroupChat(session.user.id, groupTitle, selectedIds, requestIds); setCreating(false); if (error) return Alert.alert('Create group', error.message); const groupId = data?.group?.id; setCreateOpen(false); setSelectedIds([]); setGroupTitle(''); setCandidateSearch(''); if (groupId) router.push({ pathname: '/group-chat/[id]', params: { id: groupId } }); load(); };
+    if (unconnectedIds.length > 0) { const namesText = unconnectedNames.length ? unconnectedNames.join(', ') : `${unconnectedIds.length} golfer${unconnectedIds.length === 1 ? '' : 's'}`; return Alert.alert('Request connections?', `Do you want to connect with ${namesText}?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Create only', onPress: () => run([]) }, { text: 'Create + request', onPress: () => run(unconnectedIds) }]); }
     run([]);
   }
 
@@ -168,6 +116,8 @@ export default function ChatsScreen() {
         <Text style={styles.title}>Messages</Text>
         <Text style={styles.subtitle}>Connections, requests, and chats in one place.</Text>
         <View style={styles.searchBox}><Ionicons name="search-outline" size={18} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Search users or chats..." placeholderTextColor={colors.muted} style={styles.searchInput} autoCapitalize="none" />{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.muted} /></TouchableOpacity> : null}</View>
+        <Text style={styles.matchesTitle}>Recent chats</Text>
+        {recentThreads.length ? recentThreads.map((item) => item.type === 'regular' ? <RegularThread key={item.id} thread={item.thread} onProfile={(id: string) => router.push({ pathname: '/golfer/[id]', params: { id } })} onChat={() => router.push({ pathname: '/chat/[id]', params: { id: item.thread.id } })} onUnmatch={() => confirmUnmatch(item.thread)} onDelete={() => confirmDeleteRegular(item.thread)} /> : item.type === 'group' ? <GroupThread key={item.id} thread={item.thread} onPress={() => router.push({ pathname: '/group-chat/[id]', params: { id: item.thread.id } })} onLeave={() => confirmLeaveGroup(item.thread)} /> : <RoundThread key={item.id} thread={item.thread} onPress={() => router.push({ pathname: '/round-chat/[id]', params: { id: item.thread.id } })} />) : <EmptyText text={search ? 'No chats match that search.' : 'No chats yet. Newest chats will appear here first.'} />}
         <Text style={styles.matchesTitle}>Connections</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.matchStrip}>{regular.length ? regular.map((thread) => <TouchableOpacity key={thread.id} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: thread.id } })} onLongPress={() => confirmUnmatch(thread)} style={styles.matchBubble}><Avatar profile={thread.otherProfile} size={64} /><Text numberOfLines={1} style={styles.matchName}>{thread.otherProfile?.display_name || 'Golfer'}</Text></TouchableOpacity>) : <Text style={styles.emptyStrip}>No connections yet</Text>}</ScrollView>
         <View style={styles.requestButtons}><TouchableOpacity onPress={toggleReceivedRequests} style={[styles.requestButton, requestView === 'received' && premium && styles.requestButtonActive]}><Ionicons name={premium ? 'heart-circle-outline' : 'lock-closed-outline'} size={18} color={requestView === 'received' && premium ? colors.cream : colors.pine} /><Text style={[styles.requestButtonText, requestView === 'received' && premium && styles.requestButtonTextActive]}>Requests</Text><Text style={[styles.requestCount, requestView === 'received' && premium && styles.requestCountActive]}>{premium ? filteredReceived.length : 'Plus'}</Text></TouchableOpacity><TouchableOpacity onPress={() => setRequestView(requestView === 'sent' ? null : 'sent')} style={[styles.requestButton, requestView === 'sent' && styles.requestButtonActive]}><Ionicons name="paper-plane-outline" size={18} color={requestView === 'sent' ? colors.cream : colors.pine} /><Text style={[styles.requestButtonText, requestView === 'sent' && styles.requestButtonTextActive]}>Sent</Text><Text style={[styles.requestCount, requestView === 'sent' && styles.requestCountActive]}>{filteredSent.length}</Text></TouchableOpacity></View>
