@@ -8,6 +8,7 @@ export type ConnectionRequestThread = { id: string; match: Match; otherProfile: 
 
 type ChatMessage = Message & { group_id?: string | null };
 const PUBLIC_PROFILE_COLUMNS = 'id,display_name,age,gender,avatar_url,bio,handicap_index,home_area,approx_lat,approx_lng,skill,pace,travel,holes_pref,looking_for,founder_badge,founding_member,lifetime_premium,verified_plus,onboarding_complete,rounds_played,rounds_completed,avg_rating';
+const PARTNER_VISIBLE_STATUSES = new Set(['matched', 'pending']);
 
 function isMissingGroupTables(error: any) {
   const message = String(error?.message ?? '').toLowerCase();
@@ -29,10 +30,32 @@ function latestMessageMap(messages: ChatMessage[] | null | undefined, key: 'matc
   return map;
 }
 
+function isPartnerVisibleMatch(match: Match) {
+  return PARTNER_VISIBLE_STATUSES.has(String(match.status ?? '').toLowerCase());
+}
+
+async function getBlockedPairIds(userId: string) {
+  const { data } = await supabase
+    .from('blocked_users')
+    .select('blocker_id,blocked_id')
+    .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`);
+  const blocked = new Set<string>();
+  for (const row of (data ?? []) as any[]) {
+    if (row.blocker_id === userId && row.blocked_id) blocked.add(row.blocked_id);
+    if (row.blocked_id === userId && row.blocker_id) blocked.add(row.blocker_id);
+  }
+  return blocked;
+}
+
 export async function getRegularChatThreads(userId: string) {
   const { data: matches, error } = await getMyMatches(userId);
   if (error) return { data: [] as RegularChatThread[], error };
-  const connected = (matches ?? []).filter((match) => match.status === 'matched');
+  const blockedIds = await getBlockedPairIds(userId);
+  const connected = (matches ?? []).filter((match) => {
+    if (!isPartnerVisibleMatch(match)) return false;
+    const otherId = match.golfer_a === userId ? match.golfer_b : match.golfer_a;
+    return !blockedIds.has(otherId);
+  });
   const matchIds = connected.map((match) => match.id);
   const otherIds = [...new Set(connected.map((match) => (match.golfer_a === userId ? match.golfer_b : match.golfer_a)))];
   const [{ data: profiles }, { data: messages, error: messageError }] = await Promise.all([
@@ -53,7 +76,12 @@ export async function getRegularChatThreads(userId: string) {
 export async function getConnectionRequestThreads(userId: string) {
   const { data: matches, error } = await getMyMatches(userId);
   if (error) return { data: { received: [] as ConnectionRequestThread[], sent: [] as ConnectionRequestThread[] }, error };
-  const pending = (matches ?? []).filter((match) => match.status === 'pending');
+  const blockedIds = await getBlockedPairIds(userId);
+  const pending = (matches ?? []).filter((match) => {
+    if (match.status !== 'pending') return false;
+    const otherId = match.golfer_a === userId ? match.golfer_b : match.golfer_a;
+    return !blockedIds.has(otherId);
+  });
   const otherIds = [...new Set(pending.map((match) => (match.golfer_a === userId ? match.golfer_b : match.golfer_a)))];
   const { data: profiles } = await getProfilesByIds(otherIds);
   const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
@@ -139,7 +167,12 @@ export async function getCustomGroupThreads(userId: string) {
 export async function getConnectedProfiles(userId: string) {
   const { data: matches, error } = await getMyMatches(userId);
   if (error) return { data: [] as Profile[], error };
-  const ids = [...new Set((matches ?? []).filter((match) => match.status === 'matched').map((match) => match.golfer_a === userId ? match.golfer_b : match.golfer_a))];
+  const blockedIds = await getBlockedPairIds(userId);
+  const ids = [...new Set((matches ?? []).filter((match) => {
+    if (!isPartnerVisibleMatch(match)) return false;
+    const otherId = match.golfer_a === userId ? match.golfer_b : match.golfer_a;
+    return !blockedIds.has(otherId);
+  }).map((match) => match.golfer_a === userId ? match.golfer_b : match.golfer_a))];
   return getProfilesByIds(ids);
 }
 
@@ -157,7 +190,7 @@ export async function createCustomGroupChat(userId: string, title: string, membe
   if (!uniqueMembers.length) return { data: null, error: { message: 'Select at least one golfer.' } as any };
   const { data: connectedProfiles } = await getConnectedProfiles(userId);
   const connectedIds = new Set((connectedProfiles ?? []).map((profile) => profile.id));
-  if (!uniqueMembers.some((id) => connectedIds.has(id))) return { data: null, error: { message: 'You must be connected to at least one golfer in the group.' } as any };
+  if (!uniqueMembers.some((id) => connectedIds.has(id))) return { data: null, error: { message: 'You must have at least one matched or pending golfer in the group.' } as any };
   const { data: group, error } = await supabase.from('group_chats').insert({ title: title.trim() || 'Group chat', created_by: userId }).select('*').single();
   if (error || !group) return { data: null, error: isMissingGroupTables(error) ? groupTableError() : error };
   const memberRows = [userId, ...uniqueMembers].map((memberId) => ({ group_id: group.id, user_id: memberId }));
@@ -200,4 +233,3 @@ export async function leaveGroupChat(groupId: string, userId: string) {
   if (result.error && isMissingGroupTables(result.error)) return { error: groupTableError() } as any;
   return result;
 }
-
