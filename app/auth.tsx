@@ -1,8 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { colors } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
+import { colors } from '@/lib/theme';
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -81,6 +81,12 @@ export default function AuthScreen() {
         <TouchableOpacity onPress={() => setMode(mode === 'signup' ? 'signin' : 'signup')} style={styles.inlineSwitch}>
           <Text style={styles.switchText}>{mode === 'signup' ? 'I already have an account' : 'Create account'}</Text>
         </TouchableOpacity>
+
+        {mode === 'signin' ? (
+          <TouchableOpacity onPress={() => router.push('/forgot-password' as any)} style={styles.forgotLink}>
+            <Text style={styles.forgotText}>Forgot your password?</Text>
+          </TouchableOpacity>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -108,4 +114,6 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 18, borderWidth: 1, color: colors.ink, fontSize: 16, padding: 16 },
   inlineSwitch: { marginTop: 22 },
   switchText: { color: colors.pine, fontSize: 15, fontWeight: '900', textAlign: 'center' },
+  forgotLink: { marginTop: 8 },
+  forgotText: { color: colors.muted, fontSize: 15, fontWeight: '800', textAlign: 'center', textDecorationLine: 'underline' },
 });
