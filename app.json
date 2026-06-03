@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "package": "app.teemates.mobile",
+      "package": "com.TeeMate.app",
       "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
