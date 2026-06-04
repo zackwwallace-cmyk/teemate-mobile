@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { getMessages, getMyMatches, getProfilesByIds, sendMessage, submitSupportTicket, type Match, type Message, type Profile } from '@/lib/data';
 import { sendPushNotification } from '@/lib/notifications';
@@ -8,16 +8,33 @@ import { blockGolfer, reportGolfer } from '@/lib/safety';
 import { colors } from '@/lib/theme';
 import { useSession } from '@/lib/useSession';
 
+function formatMessageDateTime(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const dayLabel = isToday ? 'Today' : d.toDateString() === yesterday.toDateString() ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  const timeLabel = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${dayLabel} • ${timeLabel}`;
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { session, loading } = useSession();
+  const scrollRef = useRef<ScrollView | null>(null);
   const [match, setMatch] = useState<Match | null>(null);
   const [other, setOther] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [body, setBody] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
+
+  function scrollToLatest(animated = true) {
+    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated }));
+  }
 
   async function load() {
     if (!session?.user.id || !id) return;
@@ -38,6 +55,7 @@ export default function ChatScreen() {
   }
 
   useEffect(() => { load(); }, [session?.user.id, id]);
+  useEffect(() => { if (messages.length) scrollToLatest(false); }, [messages.length]);
 
   if (loading) return <SafeAreaView style={styles.center}><ActivityIndicator color={colors.pine} /></SafeAreaView>;
   if (!session) return <Redirect href="/" />;
@@ -60,6 +78,7 @@ export default function ChatScreen() {
       data: { matchId: match.id, route: `/chat/${match.id}` },
     });
     await load();
+    scrollToLatest();
   }
 
   function promptReason(title: string, onSubmit: (reason: string) => void) {
@@ -103,11 +122,17 @@ export default function ChatScreen() {
           </View>
         ) : (
           <>
-            <ScrollView style={styles.messages} contentContainerStyle={styles.messageContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.messages}
+              contentContainerStyle={styles.messageContent}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} />}
+              onContentSizeChange={() => scrollToLatest(false)}
+            >
               {messages.length === 0 ? <View style={styles.emptyInline}><Text style={styles.emptyTitle}>Start the round conversation</Text><Text style={styles.emptyText}>Ask about availability, courses, tee times, or pace of play.</Text></View> : null}
               {messages.map((message) => {
                 const mine = message.sender_id === session.user.id;
-                return <View key={message.id} style={[styles.bubble, mine ? styles.myBubble : styles.theirBubble]}><Text style={[styles.bubbleText, mine ? styles.myBubbleText : styles.theirBubbleText]}>{message.body}</Text><Text style={[styles.time, mine ? styles.myTime : styles.theirTime]}>{new Date(message.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text></View>;
+                return <View key={message.id} style={[styles.bubble, mine ? styles.myBubble : styles.theirBubble]}><Text style={[styles.bubbleText, mine ? styles.myBubbleText : styles.theirBubbleText]}>{message.body}</Text><Text style={[styles.time, mine ? styles.myTime : styles.theirTime]}>{formatMessageDateTime(message.created_at)}</Text></View>;
               })}
             </ScrollView>
             <View style={styles.composer}><TextInput value={body} onChangeText={setBody} placeholder="Message about a round..." placeholderTextColor={colors.muted} style={styles.input} multiline /><TouchableOpacity disabled={sending || !body.trim()} onPress={submit} style={styles.sendButton}>{sending ? <ActivityIndicator color={colors.cream} /> : <Ionicons name="send" size={20} color={colors.cream} />}</TouchableOpacity></View>
