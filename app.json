@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.TeeMate.app",
-      "versionCode": 4,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#002D1B"
@@ -30,8 +30,7 @@
       "permissions": [
         "CAMERA",
         "READ_MEDIA_IMAGES",
-        "ACCESS_FINE_LOCATION",
-        "com.android.vending.BILLING"
+        "ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
