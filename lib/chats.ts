@@ -8,7 +8,7 @@ export type ConnectionRequestThread = { id: string; match: Match; otherProfile: 
 
 type ChatMessage = Message & { group_id?: string | null };
 const PUBLIC_PROFILE_COLUMNS = 'id,display_name,age,gender,avatar_url,bio,handicap_index,home_area,approx_lat,approx_lng,skill,pace,travel,holes_pref,looking_for,founder_badge,founding_member,lifetime_premium,verified_plus,onboarding_complete,rounds_played,rounds_completed,avg_rating';
-const PARTNER_VISIBLE_STATUSES = new Set(['matched', 'pending']);
+const PARTNER_VISIBLE_STATUSES = new Set(['matched']);
 
 function isMissingGroupTables(error: any) {
   const message = String(error?.message ?? '').toLowerCase();
@@ -190,46 +190,20 @@ export async function createCustomGroupChat(userId: string, title: string, membe
   if (!uniqueMembers.length) return { data: null, error: { message: 'Select at least one golfer.' } as any };
   const { data: connectedProfiles } = await getConnectedProfiles(userId);
   const connectedIds = new Set((connectedProfiles ?? []).map((profile) => profile.id));
-  if (!uniqueMembers.some((id) => connectedIds.has(id))) return { data: null, error: { message: 'You must have at least one matched or pending golfer in the group.' } as any };
+  if (!uniqueMembers.some((id) => connectedIds.has(id))) return { data: null, error: { message: 'You must have at least one matched golfer in the group.' } as any };
   const { data: group, error } = await supabase.from('group_chats').insert({ title: title.trim() || 'Group chat', created_by: userId }).select('*').single();
   if (error || !group) return { data: null, error: isMissingGroupTables(error) ? groupTableError() : error };
   const memberRows = [userId, ...uniqueMembers].map((memberId) => ({ group_id: group.id, user_id: memberId }));
   const memberInsert = await supabase.from('group_chat_members').insert(memberRows);
   if (memberInsert.error) return { data: null, error: isMissingGroupTables(memberInsert.error) ? groupTableError() : memberInsert.error };
-  const unconnected = uniqueMembers.filter((id) => !connectedIds.has(id));
-  const requestSet = new Set(requestConnectionIds);
-  const requested = unconnected.filter((id) => requestSet.has(id));
-  await Promise.all(requested.map((id) => createOrUpdateMatch(userId, id, 'pending')));
-  return { data: { group, unconnected, requested }, error: null };
-}
-
-export async function getGroupChat(groupId: string, userId: string) {
-  const { data: membership, error: membershipError } = await supabase.from('group_chat_members').select('group_id').eq('group_id', groupId).eq('user_id', userId).maybeSingle();
-  if (membershipError || !membership) return { data: null, error: membershipError ? (isMissingGroupTables(membershipError) ? groupTableError() : membershipError) : { message: 'You are not in this group chat.' } as any };
-  const [{ data: group, error: groupError }, { data: members, error: membersError }, { data: messages, error: messageError }] = await Promise.all([
-    supabase.from('group_chats').select('*').eq('id', groupId).maybeSingle(),
-    supabase.from('group_chat_members').select('user_id').eq('group_id', groupId),
-    supabase.from('messages').select('*').eq('group_id', groupId).order('created_at', { ascending: true }).returns<ChatMessage[]>(),
-  ]);
-  const anyError = groupError || membersError || messageError;
-  if (anyError) return { data: null, error: isMissingGroupTables(anyError) ? groupTableError() : anyError };
-  const ids = (members ?? []).map((row: any) => row.user_id);
-  const { data: profiles } = await getProfilesByIds(ids);
-  return { data: { group, profiles: profiles ?? [], messages: messages ?? [] }, error: null };
-}
-
-export async function sendGroupMessage(groupId: string, userId: string, body: string) {
-  const result = await supabase.from('messages').insert({ group_id: groupId, sender_id: userId, body }).select('*').single();
-  if (result.error && isMissingGroupTables(result.error)) return { data: null, error: groupTableError() };
-  return result;
-}
-
-export async function unmatchUser(matchId: string) {
-  return supabase.from('matches').update({ status: 'declined' }).eq('id', matchId);
+  if (requestConnectionIds.length) await Promise.all(requestConnectionIds.map((id) => createOrUpdateMatch(userId, id, 'pending')));
+  return { data: { group }, error: null };
 }
 
 export async function leaveGroupChat(groupId: string, userId: string) {
-  const result = await supabase.from('group_chat_members').delete().eq('group_id', groupId).eq('user_id', userId);
-  if (result.error && isMissingGroupTables(result.error)) return { error: groupTableError() } as any;
-  return result;
+  return supabase.from('group_chat_members').delete().eq('group_id', groupId).eq('user_id', userId);
+}
+
+export async function unmatchUser(matchId: string) {
+  return supabase.from('matches').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', matchId);
 }
