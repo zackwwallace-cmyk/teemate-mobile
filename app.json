@@ -17,13 +17,15 @@
       "infoPlist": {
         "NSCameraUsageDescription": "TeeMate uses your camera only when you choose to add or update a profile or post photo.",
         "NSPhotoLibraryUsageDescription": "TeeMate uses your photo library only when you choose to upload a profile or post photo.",
-        "NSLocationWhenInUseUsageDescription": "TeeMate uses your approximate location to help match you with nearby golfers and filter partner suggestions."
+        "NSLocationWhenInUseUsageDescription": "TeeMate uses your approximate location to help match you with nearby golfers and filter partner suggestions.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.TeeMate.app",
       "versionCode": 11,
       "blockedPermissions": [
+        "com.android.vending.BILLING",
         "com.android.vending.BILLING"
       ],
       "adaptiveIcon": {
@@ -31,6 +33,9 @@
         "backgroundColor": "#002D1B"
       },
       "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "ACCESS_FINE_LOCATION",
         "CAMERA",
         "READ_MEDIA_IMAGES",
         "ACCESS_FINE_LOCATION"
@@ -44,6 +49,18 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "99e3c657-84dd-4ef7-b197-578b1f844e43"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/99e3c657-84dd-4ef7-b197-578b1f844e43"
     }
   }
 }
