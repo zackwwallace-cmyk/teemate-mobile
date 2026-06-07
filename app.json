@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "com.TeeMate.app",
-      "versionCode": 11,
+      "versionCode": 15,
       "blockedPermissions": [
         "com.android.vending.BILLING"
       ],
