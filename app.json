@@ -10,8 +10,8 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.teemates.mobile",
-      "buildNumber": "5",
+      "bundleIdentifier": "com.teemates.apps",
+      "buildNumber": "6",
       "usesAppleSignIn": false,
       "icon": "./assets/icon.png",
       "infoPlist": {
@@ -25,7 +25,6 @@
       "package": "com.TeeMate.app",
       "versionCode": 11,
       "blockedPermissions": [
-        "com.android.vending.BILLING",
         "com.android.vending.BILLING"
       ],
       "adaptiveIcon": {
@@ -33,9 +32,6 @@
         "backgroundColor": "#002D1B"
       },
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES",
-        "ACCESS_FINE_LOCATION",
         "CAMERA",
         "READ_MEDIA_IMAGES",
         "ACCESS_FINE_LOCATION"
