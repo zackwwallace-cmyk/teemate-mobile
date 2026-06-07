@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.teemates.mobile",
-      "buildNumber": "4",
+      "buildNumber": "5",
       "usesAppleSignIn": false,
       "icon": "./assets/icon.png",
       "infoPlist": {
