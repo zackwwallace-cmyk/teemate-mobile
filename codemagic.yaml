@@ -3,6 +3,8 @@ workflows:
     name: iOS Release IPA
     max_build_duration: 120
     instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Codemagic
     environment:
       node: 20
       xcode: latest
@@ -32,3 +34,6 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
