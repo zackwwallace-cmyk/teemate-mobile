@@ -36,7 +36,7 @@ export type Profile = {
 export type Course = { id: string; name: string; town: string | null; state: string | null; type: string | null };
 export type Match = { id: string; golfer_a: string; golfer_b: string; initiated_by: string; status: string; created_at: string; updated_at: string; match_score: number | null };
 export type Message = { id: string; match_id: string | null; round_id: string | null; sender_id: string; body: string; created_at: string; read_at: string | null };
-export type Round = { id: string; course_text: string | null; town: string | null; tee_time: string; tee_time_end?: string | null; holes: number; open_slots: number; status: string; notes: string | null; host_id: string; format?: string; is_open_board?: boolean };
+export type Round = { id: string; course_text: string | null; town: string | null; tee_time: string; tee_time_end?: string | null; holes: number; open_slots: number; status: string; notes: string | null; host_id: string; format?: string; is_open_board?: boolean; host_profile?: Pick<Profile, 'id' | 'display_name' | 'avatar_url'> | null };
 export type CreateRoundInput = { hostId: string; courseText: string; town?: string | null; teeTime: string; teeTimeEnd?: string | null; holes: number; openSlots: number; format: string; notes?: string | null };
 export type FeedPost = { id: string; body: string; media_url: string | null; media_type: string | null; created_at: string; author_id: string; course_id?: string | null; course_text?: string | null; tee_time?: string | null; tagged_user_ids?: string[] | null };
 export type CreateFeedPostInput = { body: string; mediaUrl?: string | null; mediaType?: string | null; courseId?: string | null; courseText?: string | null; teeTime?: string | null; taggedUserIds?: string[] };
@@ -51,6 +51,7 @@ const ADMIN_PROFILE_COLUMNS = 'id,display_name,avatar_url,home_area,skill,rounds
 function isMissingGenderColumn(error: any) { const message = String(error?.message ?? '').toLowerCase(); return message.includes('gender') && (message.includes('column') || message.includes('schema cache')); }
 function isMissingColumn(error: any, column: string) { const message = String(error?.message ?? '').toLowerCase(); return message.includes(column.toLowerCase()) && (message.includes('column') || message.includes('schema cache')); }
 function cutoff30DaysIso() { return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); }
+function roundExpirationCutoffIso() { return new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(); }
 async function safeSendConnectionPush(input: { recipientIds: string[]; actorId: string; type: 'connection_request' | 'match'; matchId: string }) { try { await sendPushNotification({ recipientIds: input.recipientIds, actorId: input.actorId, title: input.type === 'match' ? "You're matched on TeeMate" : 'New TeeMate connection request', body: input.type === 'match' ? 'You can now start planning a round together.' : 'A golfer wants to connect and play a round.', type: input.type, data: { matchId: input.matchId, route: '/chats' } }); } catch (error: any) { console.log('Connection push error:', error?.message ?? error); } }
 
 function extractPostMedia(stored?: string | null) {
@@ -87,6 +88,16 @@ async function signedPostMediaUrl(value?: string | null) {
 }
 async function withSignedPostMedia(posts: FeedPost[]) { return Promise.all(posts.map(async (post) => ({ ...post, media_url: await signedPostMediaUrl(post.media_url) }))); }
 
+async function deleteExpiredOpenRounds() {
+  const cutoff = roundExpirationCutoffIso();
+  const { data: expired } = await supabase.from('rounds').select('id').eq('is_open_board', true).lt('tee_time', cutoff);
+  const ids = [...new Set((expired ?? []).map((round: any) => round.id).filter(Boolean))];
+  if (!ids.length) return;
+  await supabase.from('messages').delete().in('round_id', ids);
+  await supabase.from('round_players').delete().in('round_id', ids);
+  await supabase.from('rounds').delete().in('id', ids);
+}
+
 export async function getMyProfile(userId: string) { return supabase.from('profiles').select('*').eq('id', userId).maybeSingle(); }
 export async function upsertMyProfile(userId: string, values: Partial<Profile>) { const payload = { id: userId, ...values, updated_at: new Date().toISOString() } as any; let result = await supabase.from('profiles').upsert(payload).select('*').single(); if (result.error && isMissingGenderColumn(result.error)) { const { gender, ...safePayload } = payload; result = await supabase.from('profiles').upsert(safePayload).select('*').single(); } if (result.error && isMissingColumn(result.error, 'date_of_birth')) { const { date_of_birth, ...safePayload } = payload; result = await supabase.from('profiles').upsert(safePayload).select('*').single(); } return result; }
 function scoreProfile(me: Profile | null, other: Profile & { course_ids?: string[] }, myCourseIds: string[]) { let score = 60; if (me?.skill && other.skill && me.skill === other.skill) score += 12; if (me?.pace && other.pace && me.pace === other.pace) score += 8; if (me?.travel && other.travel && me.travel === other.travel) score += 6; if (me?.holes_pref && other.holes_pref === me.holes_pref) score += 6; if (other.founder_badge || other.verified_plus) score += 4; if (myCourseIds.length && other.course_ids?.some((id) => myCourseIds.includes(id))) score += 14; return Math.max(1, Math.min(99, score)); }
@@ -104,7 +115,7 @@ export async function createCourse(name: string) { return supabase.from('courses
 export async function getMyProfileCourses(userId: string) { const { data: rows, error } = await supabase.from('profile_courses').select('course_id').eq('profile_id', userId); if (error) return { data: [] as Course[], error }; const ids = [...new Set((rows ?? []).map((row: any) => row.course_id).filter(Boolean))]; if (!ids.length) return { data: [] as Course[], error: null }; return supabase.from('courses').select('id,name,town,state,type').in('id', ids).order('name', { ascending: true }).returns<Course[]>(); }
 export async function getMessages(matchId: string) { return supabase.from('messages').select('*').eq('match_id', matchId).order('created_at', { ascending: true }).returns<Message[]>(); }
 export async function sendMessage(matchId: string, userId: string, body: string) { return supabase.from('messages').insert({ match_id: matchId, sender_id: userId, body }).select('*').single(); }
-export async function getOpenRounds() { return supabase.from('rounds').select('*').eq('is_open_board', true).order('tee_time', { ascending: true }).limit(50).returns<Round[]>(); }
+export async function getOpenRounds() { await deleteExpiredOpenRounds(); const cutoff = roundExpirationCutoffIso(); const result = await supabase.from('rounds').select('*').eq('is_open_board', true).gte('tee_time', cutoff).order('tee_time', { ascending: true }).limit(50).returns<Round[]>(); if (result.error || !result.data) return result; const hostIds = [...new Set(result.data.map((round) => round.host_id).filter(Boolean))]; const { data: profiles } = hostIds.length ? await supabase.from('profiles').select('id,display_name,avatar_url').in('id', hostIds) : { data: [] as any[] }; const profileMap = new Map((profiles ?? []).map((profile: any) => [profile.id, profile])); const rounds = result.data.map((round) => { const host = profileMap.get(round.host_id) ?? null; const postedBy = `Posted by ${host?.display_name || 'Golfer'}`; return { ...round, host_profile: host, notes: round.notes ? `${postedBy} • ${round.notes}` : postedBy }; }); return { data: rounds, error: null }; }
 export async function createOpenRound(input: CreateRoundInput) { const payload = { host_id: input.hostId, course_text: input.courseText, town: input.town || null, tee_time: input.teeTime, tee_time_end: input.teeTimeEnd || null, holes: input.holes, open_slots: input.openSlots, format: input.format as any, notes: input.notes || null, is_open_board: true, status: 'proposed' }; let result = await supabase.from('rounds').insert(payload).select('*').single(); if (result.error && isMissingColumn(result.error, 'tee_time_end')) { const { tee_time_end, ...safePayload } = payload; result = await supabase.from('rounds').insert(safePayload).select('*').single(); } const { data, error } = result; if (error || !data) return { data, error }; await supabase.from('round_players').upsert({ round_id: data.id, player_id: input.hostId, confirmed: true }); return { data, error: null }; }
 export async function joinRound(roundId: string, userId: string) { return supabase.from('round_players').upsert({ round_id: roundId, player_id: userId, confirmed: false }); }
 export async function deleteOldFeedPosts() { return supabase.from('posts').delete().lt('created_at', cutoff30DaysIso()); }
@@ -116,7 +127,7 @@ export async function uploadPostPhoto(userId: string, uri: string) { const ext =
 export async function getPostLikes(postIds: string[]) { if (!postIds.length) return { data: [] as PostLike[], error: null }; return supabase.from('post_likes').select('*').in('post_id', postIds).returns<PostLike[]>(); }
 export async function getPostCommentCounts(postIds: string[]) { if (!postIds.length) return { data: [] as { post_id: string; id: string }[], error: null }; return supabase.from('post_comments').select('post_id,id').in('post_id', postIds); }
 export async function getPostComments(postId: string) { return supabase.from('post_comments').select('*').eq('post_id', postId).order('created_at', { ascending: true }).returns<PostComment[]>(); }
-export async function likePost(postId: string, userId: string) { return supabase.from('post_likes').upsert({ post_id: postId, user_id: userId }); }
+export async function likePost(postId: string, userId: string) { return supabase.from('post_likes').upsert({ post_id, user_id: userId }); }
 export async function unlikePost(postId: string, userId: string) { return supabase.from('post_likes').delete().eq('post_id', postId).eq('user_id', userId); }
 export async function addPostComment(postId: string, userId: string, body: string) { return supabase.from('post_comments').insert({ post_id: postId, author_id: userId, body }).select('*').single(); }
 export async function submitSupportTicket(userId: string, category: string, subject: string, message: string) { return supabase.from('support_tickets').insert({ user_id: userId, category, subject, message }); }
