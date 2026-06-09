@@ -8,8 +8,8 @@ function routeFromNotification(response: Notifications.NotificationResponse | nu
   const rawRoute = response?.notification.request.content.data?.route;
   if (typeof rawRoute !== 'string' || !rawRoute.startsWith('/')) return '/chats';
 
-  const allowedPrefixes = ['/chat/', '/group-chat/', '/round-chat/', '/golfer/'];
-  const allowedRoutes = ['/chats', '/discover', '/rounds', '/feed', '/profile', '/support'];
+  const allowedPrefixes = ['/chat/', '/group-chat/', '/round-chat/', '/golfer/', '/course/'];
+  const allowedRoutes = ['/chats', '/discover', '/rounds', '/courses', '/feed', '/profile', '/support'];
   if (allowedRoutes.includes(rawRoute) || allowedPrefixes.some((prefix) => rawRoute.startsWith(prefix))) return rawRoute;
 
   return '/chats';
@@ -60,6 +60,7 @@ export default function RootLayout() {
         <Stack.Screen name="reset-password" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="rounds" />
+        <Stack.Screen name="courses" />
         <Stack.Screen name="discover" />
         <Stack.Screen name="matches" />
         <Stack.Screen name="chats" />
@@ -73,6 +74,7 @@ export default function RootLayout() {
         <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="group-chat/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="round-chat/[id]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="course/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="golfer/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="delete-account" options={{ animation: 'slide_from_right' }} />
       </Stack>
