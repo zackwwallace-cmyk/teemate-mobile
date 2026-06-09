@@ -10,9 +10,9 @@ import { useSession } from '@/lib/useSession';
 
 const tabs = [
   { href: '/rounds', label: 'Rounds', icon: 'calendar-outline', badgeKey: 'rounds' },
+  { href: '/courses', label: 'Courses', icon: 'flag-outline' },
   { href: '/discover', label: 'Partners', icon: 'golf-outline' },
   { href: '/chats', label: 'Messages', icon: 'chatbubbles-outline', badgeKey: 'connections' },
-  { href: '/feed', label: 'Board', icon: 'newspaper-outline' },
   { href: '/profile', label: 'Profile', icon: 'person-outline' },
 ] as const;
 
@@ -46,7 +46,7 @@ export function BottomNav() {
       {showJoinPlus ? <Pressable onPress={() => router.push('/upgrade' as any)} style={({ pressed }) => [styles.joinPlus, pressed && styles.pressedTab]}><Ionicons name="flash" size={16} color={colors.pine} /><Text style={styles.joinPlusText}>Join TeeMate+</Text></Pressable> : null}
       <View style={styles.bar}>
         {tabs.map((tab) => {
-          const active = pathname === tab.href || (tab.href === '/chats' && pathname === '/matches');
+          const active = pathname === tab.href || (tab.href === '/chats' && pathname === '/matches') || (tab.href === '/courses' && pathname.startsWith('/course/'));
           const badgeKey = 'badgeKey' in tab ? tab.badgeKey : undefined;
           const count = badgeKey ? badges[badgeKey] : 0;
           return (
