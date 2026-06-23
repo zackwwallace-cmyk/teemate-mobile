@@ -26,6 +26,24 @@ workflows:
       - name: Set up iOS code signing
         script: |
           xcode-project use-profiles
+      - name: Set iOS build number
+        script: |
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" 2>/dev/null || echo 0)
+          LATEST_BUILD_NUMBER=${LATEST_BUILD_NUMBER:-0}
+          STATIC_BUILD_NUMBER=71
+          CODEMAGIC_BUILD_NUMBER=${PROJECT_BUILD_NUMBER:-${BUILD_NUMBER:-0}}
+          case "$LATEST_BUILD_NUMBER" in ''|*[!0-9]*) LATEST_BUILD_NUMBER=0 ;; esac
+          case "$CODEMAGIC_BUILD_NUMBER" in ''|*[!0-9]*) CODEMAGIC_BUILD_NUMBER=1 ;; esac
+          FALLBACK_BUILD_NUMBER=$((STATIC_BUILD_NUMBER + CODEMAGIC_BUILD_NUMBER))
+          NEXT_BUILD_NUMBER=$((LATEST_BUILD_NUMBER + 1))
+          if [ "$NEXT_BUILD_NUMBER" -le "$FALLBACK_BUILD_NUMBER" ]; then
+            NEXT_BUILD_NUMBER=$FALLBACK_BUILD_NUMBER
+          fi
+          if [ "$NEXT_BUILD_NUMBER" -le "$STATIC_BUILD_NUMBER" ]; then
+            NEXT_BUILD_NUMBER=$((STATIC_BUILD_NUMBER + 1))
+          fi
+          echo "Using iOS build number $NEXT_BUILD_NUMBER"
+          (cd ios && agvtool new-version -all "$NEXT_BUILD_NUMBER")
       - name: Build IPA
         script: |
           xcode-project build-ipa \
